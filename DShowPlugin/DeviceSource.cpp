@@ -718,6 +718,58 @@ bool DeviceSource::LoadFilters()
     }
     else if(soundOutputType == 2)
     {
+        audioFilter = nullptr;
+
+        ICreateDevEnum *devEnum = NULL;
+        if (FAILED(err = CoCreateInstance(CLSID_SystemDeviceEnum, NULL, CLSCTX_INPROC_SERVER, IID_ICreateDevEnum, (void **)&devEnum)))
+        {
+            AppWarning(TEXT("DShowPlugin: failed to create device enumerator, result = %08lX"), err);
+            soundOutputType = 0;
+        }
+        else
+        {
+            IEnumMoniker *enumMoniker = NULL;
+            if ((err = devEnum->CreateClassEnumerator(CLSID_AudioRendererCategory, &enumMoniker, 0)) != S_OK)
+            {
+                AppWarning(TEXT("DShowPlugin: failed to create class enumerator, result = %08lX"), err);
+                soundOutputType = 0;
+            }
+            else
+            {
+                IMoniker *moniker = NULL;
+                ULONG fetched;
+                while (enumMoniker->Next(1, &moniker, &fetched) == S_OK &&
+                       audioFilter == nullptr)
+                {
+                    IPropertyBag *propertyBag;
+                    HRESULT hr = moniker->BindToStorage(0, 0, IID_PPV_ARGS(&propertyBag));
+                    if (FAILED(hr))
+                    {
+                        moniker->Release();
+                        continue;
+                    }
+
+                    VARIANT var;
+                    VariantInit(&var);
+
+                    if (SUCCEEDED(propertyBag->Read(L"FriendlyName", &var, 0)))
+                    {
+                        if (wcscmp(var.bstrVal, L"DirectSound: Line 1 (Virtual Audio Cable)") == 0)
+                        {
+                            moniker->BindToObject(0, 0, IID_IBaseFilter, (void**)&audioFilter);
+                        }
+
+                        VariantClear(&var);
+                    }
+
+                    moniker->Release();
+                }
+                enumMoniker->Release();
+            }
+            devEnum->Release();
+        }
+
+        /*
         if(bUseAudioRender) {
             if(FAILED(err = CoCreateInstance(CLSID_AudioRender, NULL, CLSCTX_INPROC_SERVER, IID_IBaseFilter, (void**)&audioFilter)))
             {
@@ -732,6 +784,7 @@ bool DeviceSource::LoadFilters()
                 soundOutputType = 0;
             }
         }
+        */
 
         IBasicAudio *basicAudio;
         if(SUCCEEDED(audioFilter->QueryInterface(IID_IBasicAudio, (void**)&basicAudio)))
